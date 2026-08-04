@@ -200,16 +200,13 @@ pub struct ExportContextArrowInput {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")] // Serializa a "active" o "archived" en JSON/DB
+#[derive(Default)]
 pub enum EntityStatus {
+    #[default]
     Active,
     Archived,
 }
 
-impl Default for EntityStatus {
-    fn default() -> Self {
-        EntityStatus::Active
-    }
-}
 
 #[derive(Debug, Deserialize, Serialize, schemars::JsonSchema, Clone)]
 pub struct ProjectEntity {
@@ -318,16 +315,13 @@ impl NopalMcpServer {
             
             let mut found_id = None;
             for cid in candidates {
-                if let Ok(node) = storage.get_node(cid).await {
-                    if node.label == entity.kind {
-                        if let Some(nopaldb::types::PropertyValue::String(n)) = node.properties.get("name") {
-                            if n == &entity.name {
+                if let Ok(node) = storage.get_node(cid).await
+                    && node.label == entity.kind
+                        && let Some(nopaldb::types::PropertyValue::String(n)) = node.properties.get("name")
+                            && n == &entity.name {
                                 found_id = Some(cid);
                                 break;
                             }
-                        }
-                    }
-                }
             }
 
             if let Some(id) = found_id {
@@ -428,16 +422,14 @@ impl NopalMcpServer {
                                     }
                                 });
 
-                            if let Some(id_str) = id_str {
-                                if let Ok(node_id) = id_str.parse::<NodeId>() {
-                                    if let Ok(node) = self.graph.get_node(node_id).await {
+                            if let Some(id_str) = id_str
+                                && let Ok(node_id) = id_str.parse::<NodeId>()
+                                    && let Ok(node) = self.graph.get_node(node_id).await {
                                         row.set(
                                             label_col,
                                             nopaldb::PropertyValue::String(node.label.clone()),
                                         );
                                     }
-                                }
-                            }
                         }
                     }
                 }
@@ -630,8 +622,11 @@ impl NopalMcpServer {
         &self,
         Parameters(NqlSyntaxInput { statement }): Parameters<NqlSyntaxInput>,
     ) -> Result<CallToolResult, McpError> {
-        // Gramática PEG embebida en tiempo de compilación — siempre en sync con el parser real.
-        const NQL_GRAMMAR: &str = include_str!("../../nopaldb/src/query/nql/parser/nql.pest");
+        // Gramática PEG embebida en tiempo de compilación. Copia vendorizada de
+        // nopaldb/src/query/nql/parser/nql.pest (misma versión que la dependencia
+        // de crates.io); al actualizar `nopaldb` en Cargo.toml, re-sincronizar
+        // src/nql.pest desde el paquete publicado.
+        const NQL_GRAMMAR: &str = include_str!("nql.pest");
 
         // Mapa de statement types → reglas raíz y ejemplos canónicos
         let sections: Vec<(&str, &str, Vec<&str>)> = vec![
@@ -694,9 +689,8 @@ impl NopalMcpServer {
         output.push_str("  - Aristas: `-[:TYPE]->`, `<-[:TYPE]-`, `-[r:TYPE]->`\n\n");
 
         for (name, rule_name, examples) in &sections {
-            if let Some(ref f) = filter {
-                if f != name { continue; }
-            }
+            if let Some(ref f) = filter
+                && f != name { continue; }
 
             output.push_str(&format!("## {}\n", name.to_uppercase()));
 
@@ -730,14 +724,13 @@ impl NopalMcpServer {
         }
 
         // Si se filtró y no hubo match, indicar
-        if let Some(ref f) = filter {
-            if !sections.iter().any(|(name, _, _)| *name == f.as_str()) {
+        if let Some(ref f) = filter
+            && !sections.iter().any(|(name, _, _)| *name == f.as_str()) {
                 output.push_str(&format!(
                     "Statement type '{}' no reconocido. Tipos válidos: find, add, update, delete, \
                      explain, profile, sketch, commit, create_index, drop_index\n", f
                 ));
             }
-        }
 
         Ok(CallToolResult::structured(json!({
             "syntax_reference": output,
@@ -1230,8 +1223,8 @@ impl NopalMcpServer {
                     // Si la base de datos tiene una ruta que VS Code ya NO vio hoy...
                     if !incoming_paths.contains(&path) {
                         // Aplicamos el Tombstone (Soft Delete)
-                        if let Ok(uuid) = id.parse::<nopaldb::types::NodeId>() {
-                            if let Ok(mut node) = self.graph.get_node(uuid).await {
+                        if let Ok(uuid) = id.parse::<nopaldb::types::NodeId>()
+                            && let Ok(mut node) = self.graph.get_node(uuid).await {
                                 use nopaldb::types::PropertyValue;
                                 let old_status = node.properties.get("status").cloned();
                                 let new_status = PropertyValue::String("archived".to_string());
@@ -1245,7 +1238,6 @@ impl NopalMcpServer {
                                     zombies_archived += 1;
                                 }
                             }
-                        }
                     }
                 }
             }
@@ -1279,11 +1271,11 @@ impl NopalMcpServer {
                 "find n.id as id from (n:EpisodicEvent) where n.commit_hash = \"{}\"",
                 escape_nql_string(prev_hash)
             );
-            if let Ok(res) = self.graph.execute_nql(&find_q).await {
-                if let Some(row) = res.rows().first() {
-                    if let Some(id_str) = row.get_string("id") {
-                        if let Ok(existing_id) = id_str.parse::<NodeId>() {
-                            if let Ok(mut node) = self.graph.get_node(existing_id).await {
+            if let Ok(res) = self.graph.execute_nql(&find_q).await
+                && let Some(row) = res.rows().first()
+                    && let Some(id_str) = row.get_string("id")
+                        && let Ok(existing_id) = id_str.parse::<NodeId>()
+                            && let Ok(mut node) = self.graph.get_node(existing_id).await {
                                 use nopaldb::types::PropertyValue;
                                 // Mutación in-place: actualizar hash y timestamp
                                 node.properties.insert(
@@ -1309,10 +1301,6 @@ impl NopalMcpServer {
                                     })));
                                 }
                             }
-                        }
-                    }
-                }
-            }
             // Si el hash previo no existía en la DB, procedemos con creación normal.
             // Esto es intencional: tolerancia ante hashes huérfanos o bases limpias.
         }

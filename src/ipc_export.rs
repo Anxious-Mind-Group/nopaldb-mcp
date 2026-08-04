@@ -1,6 +1,5 @@
 use memmap2::MmapMut;
 use nopaldb::{Graph, error::NopalError};
-use serde_json;
 use std::fs::OpenOptions;
 use uuid::Uuid;
 

@@ -1,18 +1,19 @@
 [package]
 name = "nopaldb-mcp"
-version.workspace = true
+version = "0.5.1"
 edition = "2024"
-authors.workspace = true
+authors = ["Sharop <sharop@gmail.com>"]
 description = "MCP server for NopalDB — exposes graph queries, traversal, and algorithms as MCP tools"
 license = "AGPL-3.0-only"  # application: stricter than the MPL-2.0 library
-repository.workspace = true
+repository = "https://github.com/Anxious-Mind-Group/nopaldb-mcp"
+rust-version = "1.89"
 
 [[bin]]
 name = "nopaldb-mcp"
 path = "src/main.rs"
 
 [dependencies]
-nopaldb   = { path = "../nopaldb", features = ["storage-sled", "algorithms", "embeddings-index", "reasoner", "fulltext", "hybrid"] }
+nopaldb   = { version = "0.5", features = ["storage-sled", "algorithms", "embeddings-index", "reasoner", "fulltext", "hybrid"] }
 rmcp      = { version = "1.5", features = ["transport-io", "transport-streamable-http-server"] }
 axum      = "0.7"
 tower     = "0.5"
@@ -30,3 +31,10 @@ subtle    = "2"                                     # constant-time bearer-token
 
 [features]
 default = []
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

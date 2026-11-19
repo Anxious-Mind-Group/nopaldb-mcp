@@ -1,5 +1,7 @@
 // Helpers: PropertyValue → serde_json, NqlResult → CallToolResult.
 use nopaldb::types::PropertyValue;
+use nopaldb::NQLStatement;
+use nopaldb::query::nql::parser::ast::ExportFormat;
 use nopaldb::query::nql::{NqlResult, QueryResult};
 use rmcp::model::{CallToolResult, ContentBlock};
 use serde_json::{Value, json};
@@ -107,10 +109,31 @@ pub fn readonly_error() -> CallToolResult {
     tool_error("Server is in read-only mode. Write operations are not allowed.")
 }
 
-/// Returns true if the NQL statement looks like a write operation.
+/// `true` si la sentencia NQL puede escribir: en la base o, vía `export ...
+/// path`, en el sistema de archivos.
+///
+/// Clasifica con el parser del core y no por la primera palabra: la gramática
+/// acepta comentarios delante (`/* x */ add ...`) y eso burlaba el filtro.
+/// Es una lista blanca: solo pasan consultas, solas o bajo `explain` /
+/// `profile`; una variante nueva de `Statement` queda bloqueada hasta
+/// revisarla. Lo que no parsea pasa: la ejecución lo rechaza con el mismo
+/// error de sintaxis, sin tocar nada.
 pub fn is_write_statement(nql: &str) -> bool {
-    let first = nql.split_whitespace().next().unwrap_or("").to_lowercase();
-    matches!(first.as_str(), "add" | "update" | "delete" | "create" | "drop")
+    match nopaldb::parse(nql) {
+        Ok(stmt) => !is_pure_read(&stmt),
+        Err(_) => false,
+    }
+}
+
+fn is_pure_read(stmt: &NQLStatement) -> bool {
+    match stmt {
+        NQLStatement::Query(q) => q.export.as_ref().is_none_or(|e| {
+            !matches!(e.format, ExportFormat::Parquet(_))
+                && !e.options.keys().any(|k| k.eq_ignore_ascii_case("path"))
+        }),
+        NQLStatement::Explain(inner) | NQLStatement::Profile(inner) => is_pure_read(inner),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -147,5 +170,37 @@ mod tests {
                 PropertyValue::Int(3)
             ])
         );
+    }
+
+    #[test]
+    fn write_detection_reads_the_statement_not_the_first_word() {
+        for nql in [
+            "add (p:Persona {name: \"eva\"})",
+            "/* nota */ add (p:Persona {name: \"eva\"})",
+            "// nota\nDELETE (p:Persona) where p.name = \"ana\"",
+            "  Update (p:Persona) set p.edad = 3",
+            "create index on Persona(name) type hash",
+            "drop index persona_name",
+            "find p.name from (p:Persona) export json with path=\"x.json\"",
+            "find p.name from (p:Persona) export csv with path=\"x.csv\"",
+            "find p.name from (p:Persona) export csv with PATH=\"x.csv\"",
+            "find p.name from (p:Persona) export parquet \"x.parquet\"",
+        ] {
+            assert!(is_write_statement(nql), "debió bloquearse: {nql:?}");
+        }
+        for nql in [
+            "find p.name from (p:Persona)",
+            "/* nota */ FIND p.name from (p:Persona)",
+            "explain find p.name from (p:Persona)",
+            "profile find p.name from (p:Persona)",
+            "find p.name from (p:Persona) export csv",
+            "find p.name from (p:Persona) export json with pretty=true",
+            // No parsean (`explain` solo admite consultas): la ejecución
+            // devuelve el error de sintaxis.
+            "esto no es nql",
+            "explain add (p:Persona {name: \"eva\"})",
+        ] {
+            assert!(!is_write_statement(nql), "es lectura: {nql:?}");
+        }
     }
 }

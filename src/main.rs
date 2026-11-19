@@ -34,7 +34,8 @@ struct Cli {
     #[arg(long, default_value = "nopaldb.db")]
     db: String,
 
-    /// Open database in read-only mode (disables ADD/UPDATE/DELETE/CREATE/DROP)
+    /// Open the database sealed and accept only queries (rejects ADD/UPDATE/DELETE,
+    /// index changes and exports that write files)
     #[arg(long)]
     readonly: bool,
 
@@ -86,7 +87,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     tracing::info!(db = %args.db, readonly = args.readonly, "Opening NopalDB");
-    let graph = Graph::open(&args.db).await?;
+    // Con --readonly la base se abre sellada: si el filtro de tools dejara
+    // pasar una escritura, el core la rechaza igual.
+    let graph = if args.readonly {
+        Graph::open_read_only(&args.db).await?
+    } else {
+        Graph::open(&args.db).await?
+    };
     let graph = Arc::new(graph);
 
     let srv = server::NopalMcpServer::new(graph, args.readonly, args.log_queries);

@@ -1,6 +1,6 @@
 [package]
 name = "nopaldb-mcp"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 authors = ["Sharop <sharop@gmail.com>"]
 description = "MCP server for NopalDB — exposes graph queries, traversal, and algorithms as MCP tools"

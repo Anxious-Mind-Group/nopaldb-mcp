@@ -177,20 +177,9 @@ const ALL_TOOLS: [&str; 21] = [
     "validate_and_commit_pr_context",
 ];
 
-#[tokio::test]
-async fn every_tool_answers_over_stdio() {
-    let db = temp_db();
-    fixture(&db).await;
-    let mut srv = Server::start(&db, &[]);
-
-    // tools/list: las 21, cada una con su schema de entrada.
-    let list = srv.request("tools/list", json!({}));
-    let tools = list["result"]["tools"].as_array().unwrap();
-    let mut listed: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    listed.sort();
-    assert_eq!(listed, ALL_TOOLS);
-    assert!(tools.iter().all(|t| t["inputSchema"].is_object()));
-
+/// Las tools de lectura sobre la base del fixture. Corre igual con y sin
+/// `--readonly`: con la bandera la base se abre sellada.
+fn check_read_tools(srv: &mut Server) {
     // Consulta y esquema.
     let q = srv.call("graph_query", json!({ "query": "find p.name from (p:Persona) order by p.name" }));
     assert_eq!(names(&q["structuredContent"]["rows"], "p.name"), ["ana", "beto", "carla"]);
@@ -252,6 +241,27 @@ async fn every_tool_answers_over_stdio() {
     let ls = srv.call("list_subclasses", json!({ "class": "Planta" }));
     assert_eq!(ls["structuredContent"]["direct_subclasses"], json!(["Arbol"]), "{ls}");
     assert_eq!(ls["structuredContent"]["indirect_subclasses"], json!(["Pino"]), "{ls}");
+    // La clase va escapada también en la consulta transitiva: una comilla no
+    // reescribe el filtro.
+    let inj = srv.call("list_subclasses", json!({ "class": "x\" or ancestor.label = \"Planta" }));
+    assert_eq!(inj["structuredContent"]["indirect_subclasses"], json!([]), "{inj}");
+}
+
+#[tokio::test]
+async fn every_tool_answers_over_stdio() {
+    let db = temp_db();
+    fixture(&db).await;
+    let mut srv = Server::start(&db, &[]);
+
+    // tools/list: las 21, cada una con su schema de entrada.
+    let list = srv.request("tools/list", json!({}));
+    let tools = list["result"]["tools"].as_array().unwrap();
+    let mut listed: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    listed.sort();
+    assert_eq!(listed, ALL_TOOLS);
+    assert!(tools.iter().all(|t| t["inputSchema"].is_object()));
+
+    check_read_tools(&mut srv);
 
     // Escritura idempotente.
     let up = srv.call(
@@ -376,11 +386,45 @@ async fn readonly_rejects_every_write_tool() {
         assert!(text_of(&res).contains("read-only"), "{tool}: {res}");
     }
 
-    // Nada cambió, y leer sigue funcionando.
+    // NQL que escribe sin empezar con la palabra de escritura: comentarios
+    // delante, índices, y exportaciones que escriben un archivo.
+    let out = db.join("fuga.json");
+    let out = out.to_str().unwrap();
+    let sneaky = [
+        "/* nota */ add (p:Persona {name: \"eva\"})".to_string(),
+        "// nota\ndelete (p:Persona) where p.name = \"ana\"".to_string(),
+        "  UPDATE (p:Persona) set p.name = \"eva\" where p.name = \"ana\"".to_string(),
+        "create index on Persona(name) type hash".to_string(),
+        "drop index persona_name".to_string(),
+        format!("find p.name from (p:Persona) export json with path=\"{out}\""),
+        format!("/* x */ find p.name from (p:Persona) export csv with path=\"{out}\""),
+    ];
+    for tool in ["graph_query", "export_context_arrow"] {
+        for q in &sneaky {
+            let res = srv.call_raw(tool, json!({ "query": q }));
+            assert_eq!(res["isError"], json!(true), "{tool} aceptó {q:?} en solo lectura: {res}");
+            assert!(text_of(&res).contains("read-only"), "{tool} {q:?}: {res}");
+        }
+    }
+    assert!(!Path::new(out).exists(), "una exportación escribió {out}");
+
+    // Nada cambió, y leer sigue funcionando con la base sellada.
     let q = srv.call("graph_query", json!({ "query": "find count(*) as n from (p:Persona)" }));
     assert_eq!(q["structuredContent"]["rows"][0]["n"], 3);
+    let q = srv.call("graph_query", json!({ "query": "find p.name from (p:Persona) where p.name = \"ana\"" }));
+    assert_eq!(names(&q["structuredContent"]["rows"], "p.name"), ["ana"]);
     let si = srv.call("schema_info", json!({}));
     assert_eq!(si["structuredContent"]["readonly"], true);
+    check_read_tools(&mut srv);
+    let prof = srv.call("graph_query", json!({ "query": "profile find p.name from (p:Persona)" }));
+    assert!(!text_of(&prof).is_empty(), "{prof}");
+    // Exportar sin `path` devuelve los datos: no escribe nada.
+    let csv = srv.call("graph_query", json!({ "query": "find p.name from (p:Persona) order by p.name export csv" }));
+    assert!(text_of(&csv).contains("carla"), "{csv}");
+    let exp = srv.call("export_context_arrow", json!({ "query": "find p.name from (p:Persona)" }));
+    let _ = std::fs::remove_file(exp["structuredContent"]["shm_path"].as_str().unwrap());
+    let stats = srv.request("resources/read", json!({ "uri": "nopal://stats" }));
+    assert!(stats["result"]["contents"][0]["text"].is_string(), "{stats}");
 
     drop(srv);
     let _ = std::fs::remove_dir_all(&db);

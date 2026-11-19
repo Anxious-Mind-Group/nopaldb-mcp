@@ -90,7 +90,7 @@ Con `--scope user` queda disponible en todos tus proyectos.
 | Flag | Descripción |
 |------|-------------|
 | `--db <path>` | Ruta a la DB (default: `nopaldb.db` en CWD) |
-| `--readonly` | Bloquea escrituras (ADD/UPDATE/DELETE/CREATE/DROP) |
+| `--readonly` | Abre la base sellada y solo acepta consultas: rechaza ADD/UPDATE/DELETE, índices y exportaciones a disco |
 | `--log-queries` | Loguea queries NQL a stderr (desactivado por default) |
 
 ---

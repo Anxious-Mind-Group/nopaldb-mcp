@@ -11,17 +11,19 @@ El servidor MCP de NopalDB permite a Claude hacer consultas sobre cualquier base
 ### Opción A — Desde el código fuente (recomendado)
 
 ```bash
-# Desde la raíz del repositorio
-cargo build -p nopaldb-mcp --release
+# Desde la raíz de este repositorio
+cargo build --release
 
 # El binario queda en:
 ./target/release/nopaldb-mcp
 ```
 
+Requiere una base redb (NopalDB 0.8 o posterior). Si tu base es de sled (0.5.x), mígrala primero; ver "Compatibilidad" en el README.
+
 ### Opción B — Instalar globalmente
 
 ```bash
-cargo install --path nopaldb-mcp
+cargo install --path .
 # Queda en ~/.cargo/bin/nopaldb-mcp
 ```
 
@@ -71,14 +73,15 @@ Omite `--readonly`. Úsalo solo con DBs de desarrollo.
 
 ## Configurar Claude Code (CLI)
 
-Agrega al `claude_desktop_config.json` global (mismo archivo que Desktop) o usa el flag `--mcp-config`:
-
 ```bash
-# Probar sin configuración persistente
-claude --mcp-server "nopaldb:/path/to/nopaldb-mcp --db /path/to/db.db --readonly"
+# Registra el servidor (por defecto, solo para el proyecto actual)
+claude mcp add nopaldb -- /ruta/absoluta/a/nopaldb-mcp --db /ruta/absoluta/a/mi_grafo.db --readonly
+
+# Comprueba que conecta
+claude mcp list
 ```
 
-O configura en `~/.config/claude/claude_desktop_config.json` como arriba.
+Con `--scope user` queda disponible en todos tus proyectos.
 
 ---
 

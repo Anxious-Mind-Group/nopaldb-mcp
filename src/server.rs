@@ -787,7 +787,7 @@ impl NopalMcpServer {
         'id' is the node name or UUID. \
         'direction': 'in', 'out', or 'both' (default 'both'). \
         'edge_type': optional edge label filter. \
-        Returns an array of neighbor node summaries.")]
+        Returns {neighbors: [{label, name, id}]}.")]
     async fn get_neighbors(
         &self,
         Parameters(GetNeighborsInput { id, direction, edge_type, limit }): Parameters<GetNeighborsInput>,
@@ -820,7 +820,8 @@ impl NopalMcpServer {
         };
         let result = self.graph.execute_nql(&nql).await;
         Ok(match result {
-            Ok(r) => CallToolResult::structured(query_result_to_value(&r)),
+            // MCP exige un objeto en `structuredContent`; rmcp 3 descarta un arreglo.
+            Ok(r) => CallToolResult::structured(json!({ "neighbors": query_result_to_value(&r) })),
             Err(e) => tool_error(e),
         })
     }
@@ -1665,14 +1666,15 @@ fn days_to_ymd(days: i64) -> (i64, u32, u32) {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for NopalMcpServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
                 .build(),
         )
-        .with_server_info(Implementation::from_build_env())
+        // `from_build_env` evalúa `env!` dentro de rmcp: reportaba "rmcp".
+        .with_server_info(Implementation::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")))
         .with_instructions({
             let mut instructions = String::from(
                 "NopalDB MCP Server: query a graph database using NQL. \
@@ -1703,21 +1705,17 @@ impl ServerHandler for NopalMcpServer {
         _request: Option<PaginatedRequestParams>,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
-        Ok(ListResourcesResult {
-            resources: vec![
-                RawResource::new("nopal://schema", "Graph Schema").no_annotation(),
-                RawResource::new("nopal://stats", "Graph Statistics").no_annotation(),
-            ],
-            next_cursor: None,
-            meta: None,
-        })
+        Ok(ListResourcesResult::with_all_items(vec![
+            Resource::new("nopal://schema", "Graph Schema"),
+            Resource::new("nopal://stats", "Graph Statistics"),
+        ]))
     }
 
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _ctx: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<ReadResourceResponse, McpError> {
         match request.uri.as_str() {
             "nopal://schema" => {
                 let labels_q = "find distinct n.label as label from (n) order by label";
@@ -1732,7 +1730,7 @@ impl ServerHandler for NopalMcpServer {
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(
                     schema.to_string(),
                     request.uri,
-                )]))
+                )]).into())
             }
             "nopal://stats" => {
                 let nc = self.graph.execute_nql("find count(*) as total from (n)").await
@@ -1743,7 +1741,7 @@ impl ServerHandler for NopalMcpServer {
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(
                     stats.to_string(),
                     request.uri,
-                )]))
+                )]).into())
             }
             _ => Err(McpError::resource_not_found(
                 "Resource not found",

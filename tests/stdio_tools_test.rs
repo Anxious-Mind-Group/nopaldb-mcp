@@ -82,6 +82,8 @@ impl Server {
             }),
         );
         assert!(init["result"]["capabilities"]["tools"].is_object(), "initialize: {init}");
+        assert_eq!(init["result"]["serverInfo"]["name"], "nopaldb-mcp", "initialize: {init}");
+        assert_eq!(init["result"]["serverInfo"]["version"], env!("CARGO_PKG_VERSION"));
         srv.send(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }));
         srv
     }
@@ -110,6 +112,11 @@ impl Server {
     fn call(&mut self, tool: &str, args: Value) -> Value {
         let res = self.call_raw(tool, args);
         assert_ne!(res["isError"], json!(true), "{tool} devolvió error: {res}");
+        // Un resultado JSON tiene que viajar también como `structuredContent`,
+        // que MCP exige objeto: rmcp 3 descarta en silencio un arreglo.
+        if serde_json::from_str::<Value>(&text_of(&res)).is_ok_and(|v| v.is_object() || v.is_array()) {
+            assert!(res["structuredContent"].is_object(), "{tool} sin structuredContent: {res}");
+        }
         res
     }
 
@@ -213,9 +220,9 @@ async fn every_tool_answers_over_stdio() {
     let by_id = srv.call("get_node", json!({ "id": id }));
     assert_eq!(by_id["structuredContent"]["name"], "beto");
     let out = srv.call("get_neighbors", json!({ "id": "beto", "direction": "out" }));
-    assert_eq!(names(&out["structuredContent"], "name"), ["carla"], "{out}");
+    assert_eq!(names(&out["structuredContent"]["neighbors"], "name"), ["carla"], "{out}");
     let both = srv.call("get_neighbors", json!({ "id": "beto" }));
-    assert_eq!(names(&both["structuredContent"], "name"), ["ana", "carla"], "{both}");
+    assert_eq!(names(&both["structuredContent"]["neighbors"], "name"), ["ana", "carla"], "{both}");
     let path = srv.call("find_path", json!({ "from": "ana", "to": "carla" }));
     assert_eq!(path["structuredContent"]["found"], true, "{path}");
     assert_eq!(path["structuredContent"]["depth"], 2, "{path}");

@@ -1,7 +1,7 @@
 // Helpers: PropertyValue → serde_json, NqlResult → CallToolResult.
 use nopaldb::types::PropertyValue;
 use nopaldb::query::nql::{NqlResult, QueryResult};
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use serde_json::{Value, json};
 
 // ─── PropertyValue serialization ───────────────────────────────────────────
@@ -78,8 +78,8 @@ pub fn nql_result_to_tool(result: NqlResult, max_rows: usize) -> CallToolResult 
                 "created_ids":    w.created_ids,
             }))
         }
-        NqlResult::Index(msg)  => CallToolResult::success(vec![Content::text(msg)]),
-        NqlResult::Explain(p)  => CallToolResult::success(vec![Content::text(p)]),
+        NqlResult::Index(msg)  => CallToolResult::success(vec![ContentBlock::text(msg)]),
+        NqlResult::Explain(p)  => CallToolResult::success(vec![ContentBlock::text(p)]),
         NqlResult::Profile(p)  => CallToolResult::structured(json!({
             "statement_type": p.statement_type,
             "execution_ms":   p.execution_ms,
@@ -93,14 +93,14 @@ pub fn nql_result_to_tool(result: NqlResult, max_rows: usize) -> CallToolResult 
                 "data":          data,
             }))
         }
-        NqlResult::Message(msg) => CallToolResult::success(vec![Content::text(msg)]),
+        NqlResult::Message(msg) => CallToolResult::success(vec![ContentBlock::text(msg)]),
     }
 }
 
 // ─── Error helpers ─────────────────────────────────────────────────────────
 
 pub fn tool_error(msg: impl std::fmt::Display) -> CallToolResult {
-    CallToolResult::error(vec![Content::text(format!("{}", msg))])
+    CallToolResult::error(vec![ContentBlock::text(format!("{}", msg))])
 }
 
 pub fn readonly_error() -> CallToolResult {

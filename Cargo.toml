@@ -1,6 +1,6 @@
 [package]
 name = "nopaldb-mcp"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 authors = ["Sharop <sharop@gmail.com>"]
 description = "MCP server for NopalDB — exposes graph queries, traversal, and algorithms as MCP tools"
@@ -14,7 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 nopaldb   = { version = "0.10.16", features = ["algorithms", "embeddings-index", "reasoner", "fulltext", "hybrid"] }
-rmcp      = { version = "1.5", features = ["transport-io", "transport-streamable-http-server"] }
+rmcp      = { version = "3.11", features = ["transport-io", "transport-streamable-http-server"] }
 axum      = "0.7"
 tower     = "0.5"
 tower-http = { version = "0.5", features = ["cors"] }

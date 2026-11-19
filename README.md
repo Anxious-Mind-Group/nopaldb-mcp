@@ -34,6 +34,12 @@ Configuración de Claude Desktop (`~/.config/claude/claude_desktop_config.json`)
 }
 ```
 
+Claude Code:
+
+```bash
+claude mcp add nopaldb -- /ruta/absoluta/a/nopaldb-mcp --db /ruta/absoluta/a/mi_grafo.db --readonly
+```
+
 Guía completa (Claude Desktop, Claude Code, modo escritura, troubleshooting): [docs/MCP_CLAUDE_DESKTOP.md](docs/MCP_CLAUDE_DESKTOP.md).
 
 ### Transporte HTTP/SSE
@@ -58,11 +64,25 @@ NOPALDB_MCP_TOKEN=secreto nopaldb-mcp --db graph.db --transport sse --host 0.0.0
 | `--cors-origin <origen>` | Orígenes CORS permitidos (repetible) |
 | `--log-queries` | Loguea NQL a stderr |
 
+## Compatibilidad
+
+| nopaldb-mcp | Motor `nopaldb` | Formato de la base |
+|---|---|---|
+| 0.6.x | 0.10.16 o posterior (0.10.x) | redb |
+| 0.5.x | 0.5.x | sled |
+
+Desde 0.6.0 el servidor ya no abre bases sled: el motor retiró sled en 0.8.0. Una base sled se migra a redb con la CLI de `nopaldb` 0.7, una sola vez:
+
+```bash
+cargo install nopaldb --version 0.7.0 --features cli
+nopaldb migrate /ruta/base_sled /ruta/base_redb
+```
+
 ## Tools expuestas
 
 **Consulta y esquema**
 
-- `graph_query` — ejecuta NQL (FIND, EXPLAIN; ADD/UPDATE/DELETE con `--no-readonly`)
+- `graph_query` — ejecuta NQL (FIND, EXPLAIN; ADD/UPDATE/DELETE si el servidor no corre con `--readonly`)
 - `nql_syntax` — referencia de sintaxis NQL, filtrable por tipo de sentencia
 - `schema_info` — labels, tipos de arista, conteos de nodos y aristas
 - `schema_by_kind` — esquema agrupado por label con conteos por frecuencia
@@ -73,7 +93,7 @@ NOPALDB_MCP_TOKEN=secreto nopaldb-mcp --db graph.db --transport sse --host 0.0.0
 - `get_neighbors` — vecinos de un nodo (dirección y tipo de arista opcionales)
 - `find_path` — camino más corto entre dos nodos por nombre
 
-**Escritura idempotente** (requieren `--no-readonly`)
+**Escritura idempotente** (rechazadas con `--readonly`)
 
 - `upsert_node` — upsert por clave de negocio (label, key): create/update/no-op
 - `delete_node` — borrado por clave de negocio, idempotente

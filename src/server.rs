@@ -185,7 +185,7 @@ pub struct ListSubclassesInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct NqlSyntaxInput {
-    /// Statement type to get syntax for: find, add, update, delete, explain, profile, sketch, commit, create_index, drop_index.
+    /// Statement type to get syntax for: find, add, update, delete, explain, profile, create_index, drop_index.
     /// Leave empty to get full synopsis.
     pub statement: Option<String>,
 }
@@ -348,7 +348,7 @@ impl NopalMcpServer {
         }
 
         if !to_insert.is_empty() {
-            // Bulk insert atómico en Sled
+            // Bulk insert atómico
             let _ = storage.insert_nodes_batch(&to_insert).await;
             
             // Actualizar índices de propiedades
@@ -543,6 +543,8 @@ impl NopalMcpServer {
             rrf_k: 60.0,
             overfetch: 4,
             filter,
+            // Todo el grafo; el filtro solo lo reduce.
+            candidates: nopaldb::CandidateSet::All,
         };
         match self.graph.search_hybrid(q).await {
             Ok(hits) => {
@@ -574,7 +576,7 @@ impl NopalMcpServer {
         let labels_r = self.graph.execute_nql(labels_q).await;
 
         // Edge types
-        let etypes_q = "find distinct r.label as edge_type from (a) -[r]-> (b) order by edge_type";
+        let etypes_q = "find distinct r.type as edge_type from (a) -[r]-> (b) order by edge_type";
         let etypes_r = self.graph.execute_nql(etypes_q).await;
 
         // Counts
@@ -616,7 +618,7 @@ impl NopalMcpServer {
 
     #[tool(description = "Return NQL (Nopal Query Language) syntax reference. \
         Call this BEFORE writing any NQL query to learn the correct syntax. \
-        Optionally filter by statement type: find, add, update, delete, explain, profile, sketch, commit, create_index, drop_index. \
+        Optionally filter by statement type: find, add, update, delete, explain, profile, create_index, drop_index. \
         Without a filter, returns a complete synopsis of all statement types with examples.")]
     async fn nql_syntax(
         &self,
@@ -656,13 +658,8 @@ impl NopalMcpServer {
             ("profile", "profile_stmt", vec![
                 "profile find count(*) as total from (n)",
             ]),
-            ("sketch", "sketch_stmt", vec![
-                "sketch my_change = add (n:Feature { name: \"new_feature\" })",
-                "sketch cleanup = delete (n:TempNode)",
-            ]),
-            ("commit", "commit_stmt", vec![
-                "commit my_change",
-            ]),
+            // `sketch` y `commit` no van aquí: `execute_statement` (lo que corre
+            // `graph_query`) los rechaza; solo existen vía SketchManager en Rust.
             ("create_index", "create_index_stmt", vec![
                 "create index on Person(name)",
                 "create index on File(path) type fulltext",
@@ -686,7 +683,8 @@ impl NopalMcpServer {
         output.push_str("  - Eliminar: `delete (pattern) [where ...]`\n");
         output.push_str("  - Valores string: comillas dobles `\"texto\"` o simples `'texto'`\n");
         output.push_str("  - Nodos: `(variable:Label { prop: value })`\n");
-        output.push_str("  - Aristas: `-[:TYPE]->`, `<-[:TYPE]-`, `-[r:TYPE]->`\n\n");
+        output.push_str("  - Aristas: `-[:TYPE]->`, `<-[:TYPE]-`, `-[r:TYPE]->`; ambas direcciones: `<-[:TYPE]->`\n");
+        output.push_str("  - Tipo de una arista: `r.type` (no `r.label`)\n\n");
 
         for (name, rule_name, examples) in &sections {
             if let Some(ref f) = filter
@@ -728,7 +726,7 @@ impl NopalMcpServer {
             && !sections.iter().any(|(name, _, _)| *name == f.as_str()) {
                 output.push_str(&format!(
                     "Statement type '{}' no reconocido. Tipos válidos: find, add, update, delete, \
-                     explain, profile, sketch, commit, create_index, drop_index\n", f
+                     explain, profile, create_index, drop_index\n", f
                 ));
             }
 
@@ -816,7 +814,7 @@ impl NopalMcpServer {
             ),
             _ => format!(
                 "find b.label as label, b.name as name, b.id as id \
-                 from (a) -[{edge_spec}]- (b) where a.name = \"{safe_id}\" or a.id = \"{safe_id}\" \
+                 from (a) <-[{edge_spec}]-> (b) where a.name = \"{safe_id}\" or a.id = \"{safe_id}\" \
                  limit {lim}"
             ),
         };
@@ -946,7 +944,9 @@ impl NopalMcpServer {
         let index = self.graph.get_or_build_embedding_index(&model).await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
-        let neighbors = index.search_knn(&embedding.vector, k)
+        // Guard de std: se suelta antes del primer `.await`.
+        let neighbors = index.read().unwrap_or_else(|e| e.into_inner())
+            .search_knn(&embedding.vector, k)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         let mut results = Vec::new();
@@ -1721,7 +1721,7 @@ impl ServerHandler for NopalMcpServer {
         match request.uri.as_str() {
             "nopal://schema" => {
                 let labels_q = "find distinct n.label as label from (n) order by label";
-                let etypes_q = "find distinct r.label as edge_type from (a) -[r]-> (b) order by edge_type";
+                let etypes_q = "find distinct r.type as edge_type from (a) -[r]-> (b) order by edge_type";
                 let labels = self.graph.execute_nql(labels_q).await
                     .map(|r| r.rows().iter().filter_map(|row| row.get_string("label")).collect::<Vec<_>>())
                     .unwrap_or_default();

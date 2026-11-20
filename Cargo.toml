@@ -1,10 +1,10 @@
 [package]
 name = "nopaldb-mcp"
-version = "0.7.2"
+version = "0.8.0"
 edition = "2024"
-authors = ["Sharop <sharop@gmail.com>"]
+authors = ["Jose Antonio Mancilla (jtmancilla)", "Sharop <sharop@gmail.com>"]
 description = "MCP server for NopalDB — exposes graph queries, traversal, and algorithms as MCP tools"
-license = "AGPL-3.0-only"  # application: stricter than the MPL-2.0 library
+license = "MPL-2.0"
 repository = "https://github.com/Anxious-Mind-Group/nopaldb-mcp"
 rust-version = "1.89"
 

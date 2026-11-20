@@ -15,4 +15,4 @@ cargo clippy -- -D warnings
 ```
 
 El toolchain está fijado en `rust-toolchain.toml`. Las contribuciones se
-licencian bajo AGPL-3.0-only (ver `LICENSE`).
+licencian bajo MPL-2.0 (ver `LICENSE`).

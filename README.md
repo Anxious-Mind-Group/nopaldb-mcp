@@ -6,6 +6,8 @@
 
 Servidor [MCP](https://modelcontextprotocol.io) para [NopalDB](https://github.com/sharop/nopaldb): expone consultas de grafo, traversal, algoritmos y razonamiento OWL como tools que cualquier cliente MCP (Claude Desktop, Claude Code, Cursor…) puede invocar.
 
+Creado por **Jose Antonio Mancilla** ([jtmancilla](https://github.com/jtmancilla)). Mantenido por Sergio Haro ([sharop](https://github.com/sharop)).
+
 Soporta dos transportes:
 
 - **stdio** — el modo estándar para Claude Desktop / Claude Code.
@@ -80,7 +82,7 @@ Dos matices del motor: abrir la base aplica migraciones pendientes y reproduce e
 
 | nopaldb-mcp | Motor `nopaldb` | Formato de la base |
 |---|---|---|
-| 0.6.x – 0.7.x | 0.10.16 o posterior (0.10.x) | redb |
+| 0.6.x – 0.8.x | 0.10.16 o posterior (0.10.x) | redb |
 | 0.5.x | 0.5.x | sled |
 
 Desde 0.6.0 el servidor ya no abre bases sled: el motor retiró sled en 0.8.0. Una base sled se migra a redb con la CLI de `nopaldb` 0.7, una sola vez:
@@ -143,4 +145,6 @@ Este repositorio nació como la app `nopaldb-mcp` dentro de [sharop/nopaldb](htt
 
 ## Licencia
 
-[AGPL-3.0-only](LICENSE). El servidor MCP es una aplicación y usa una licencia más estricta que la biblioteca `nopaldb` (MPL-2.0).
+[MPL-2.0](LICENSE), la misma que la biblioteca `nopaldb`. Copyright © 2026 Jose Antonio Mancilla y Sergio Haro.
+
+El código hasta la 0.7.2 se distribuyó bajo AGPL-3.0-only y esas versiones conservan esa licencia.

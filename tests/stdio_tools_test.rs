@@ -134,6 +134,11 @@ impl Drop for Server {
     }
 }
 
+/// El directorio de exports por defecto: `<db>.exports`, al lado de la base.
+fn exports_dir(db: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.exports", db.display()))
+}
+
 fn temp_db() -> PathBuf {
     std::env::temp_dir().join(format!("nopaldb-mcp-test-{}", uuid::Uuid::new_v4()))
 }
@@ -251,7 +256,13 @@ fn check_read_tools(srv: &mut Server) {
 async fn every_tool_answers_over_stdio() {
     let db = temp_db();
     fixture(&db).await;
+    // Un export que dejó una corrida anterior: el arranque lo limpia.
+    std::fs::create_dir_all(exports_dir(&db)).unwrap();
+    let orphan = exports_dir(&db).join("nopaldb_export_viejo.json");
+    let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(7200);
+    std::fs::File::create(&orphan).unwrap().set_modified(two_hours_ago).unwrap();
     let mut srv = Server::start(&db, &[]);
+    assert!(!orphan.exists(), "el arranque no limpió el export viejo");
 
     // tools/list: las 21, cada una con su schema de entrada.
     let list = srv.request("tools/list", json!({}));
@@ -339,10 +350,13 @@ async fn every_tool_answers_over_stdio() {
     assert_eq!(pr_ctx["structuredContent"]["files_linked"], 2, "{pr_ctx}");
 
     let exp = srv.call("export_context_arrow", json!({ "query": "find p.name from (p:Persona)" }));
-    let shm = exp["structuredContent"]["shm_path"].as_str().unwrap().to_string();
-    let exported: Value = serde_json::from_slice(&std::fs::read(&shm).unwrap()).unwrap();
+    let file = PathBuf::from(exp["structuredContent"]["path"].as_str().unwrap());
+    // Por defecto, junto a la base y no en /tmp.
+    assert_eq!(file.parent(), Some(exports_dir(&db).as_path()), "{exp}");
+    assert_eq!(exp["structuredContent"]["format"], "json", "{exp}");
+    let exported: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
     assert_eq!(exported.as_array().unwrap().len(), 3, "{exported}");
-    let _ = std::fs::remove_file(&shm);
+    let _ = std::fs::remove_file(&file);
 
     // Recursos.
     let res = srv.request("resources/list", json!({}));
@@ -356,6 +370,7 @@ async fn every_tool_answers_over_stdio() {
 
     drop(srv);
     let _ = std::fs::remove_dir_all(&db);
+    let _ = std::fs::remove_dir_all(exports_dir(&db));
 }
 
 #[tokio::test]
@@ -422,12 +437,13 @@ async fn readonly_rejects_every_write_tool() {
     let csv = srv.call("graph_query", json!({ "query": "find p.name from (p:Persona) order by p.name export csv" }));
     assert!(text_of(&csv).contains("carla"), "{csv}");
     let exp = srv.call("export_context_arrow", json!({ "query": "find p.name from (p:Persona)" }));
-    let _ = std::fs::remove_file(exp["structuredContent"]["shm_path"].as_str().unwrap());
+    let _ = std::fs::remove_file(exp["structuredContent"]["path"].as_str().unwrap());
     let stats = srv.request("resources/read", json!({ "uri": "nopal://stats" }));
     assert!(stats["result"]["contents"][0]["text"].is_string(), "{stats}");
 
     drop(srv);
     let _ = std::fs::remove_dir_all(&db);
+    let _ = std::fs::remove_dir_all(exports_dir(&db));
 }
 
 /// Lo que `nql_syntax` le enseña al agente tiene que correr por `graph_query`:
@@ -453,4 +469,5 @@ async fn every_syntax_example_runs_through_graph_query() {
 
     drop(srv);
     let _ = std::fs::remove_dir_all(&db);
+    let _ = std::fs::remove_dir_all(exports_dir(&db));
 }

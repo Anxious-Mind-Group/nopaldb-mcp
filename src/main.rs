@@ -43,6 +43,15 @@ struct Cli {
     #[arg(long)]
     log_queries: bool,
 
+    /// Directory for export_context_arrow files (created 0700, files 0600,
+    /// removed after an hour). Default: `<db>.exports`, next to the database.
+    #[arg(long)]
+    export_dir: Option<std::path::PathBuf>,
+
+    /// Maximum size in bytes of one export file
+    #[arg(long, default_value_t = ipc_export::DEFAULT_MAX_EXPORT_BYTES)]
+    max_export_bytes: u64,
+
     /// Transport mode: "stdio" or "sse"
     #[arg(long, default_value = "stdio")]
     transport: String,
@@ -96,7 +105,14 @@ async fn main() -> anyhow::Result<()> {
     };
     let graph = Arc::new(graph);
 
-    let srv = server::NopalMcpServer::new(graph, args.readonly, args.log_queries);
+    let export = ipc_export::ExportConfig {
+        dir: args.export_dir.clone().unwrap_or_else(|| ipc_export::ExportConfig::default_dir(&args.db)),
+        max_bytes: args.max_export_bytes,
+    };
+    // Exports que dejó una corrida anterior.
+    ipc_export::sweep(&export.dir, ipc_export::EXPORT_TTL, std::time::SystemTime::now());
+
+    let srv = server::NopalMcpServer::new(graph, args.readonly, args.log_queries, export);
 
     match args.transport.as_str() {
         "stdio" => {

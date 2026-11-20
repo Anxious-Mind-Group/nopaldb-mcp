@@ -194,7 +194,7 @@ pub struct NqlSyntaxInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ExportContextArrowInput {
-    /// Consulta NQL para extraer el contexto masivo que se exportará (Zero-Copy).
+    /// Consulta NQL cuyo resultado se escribe al archivo de export.
     pub query: String,
 }
 
@@ -281,6 +281,7 @@ pub struct NopalMcpServer {
     graph: Arc<Graph>,
     readonly: bool,
     log_queries: bool,
+    export: crate::ipc_export::ExportConfig,
     #[allow(dead_code)]
     tool_router: ToolRouter<NopalMcpServer>,
 }
@@ -288,11 +289,17 @@ pub struct NopalMcpServer {
 // ─── Tool implementations ──────────────────────────────────────────────────
 
 impl NopalMcpServer {
-    pub fn new(graph: Arc<Graph>, readonly: bool, log_queries: bool) -> Self {
+    pub fn new(
+        graph: Arc<Graph>,
+        readonly: bool,
+        log_queries: bool,
+        export: crate::ipc_export::ExportConfig,
+    ) -> Self {
         Self {
             graph,
             readonly,
             log_queries,
+            export,
             tool_router: Self::build_router(),
         }
     }
@@ -1145,8 +1152,10 @@ impl NopalMcpServer {
 
     // ─── Dual-Plane Tools: Data Plane & Governance ─────────────────────────
 
-    #[tool(description = "Exporta un subgrafo masivo a memoria compartida (vía mmap). \
-        Devuelve la ruta del archivo. Úsalo para recuperar redes de impacto gigante sin colapsar el IDE.")]
+    #[tool(description = "Exporta el resultado de una consulta NQL a un archivo JSON (arreglo de filas) \
+        y devuelve su ruta, en vez de mandar las filas por el protocolo. Úsalo para resultados grandes. \
+        El archivo es privado del usuario, tiene un tamaño máximo (--max-export-bytes) y se borra \
+        pasada una hora. Returns {path, bytes, format, ttl_seconds}.")]
     async fn export_context_arrow(
         &self,
         Parameters(ExportContextArrowInput { query }): Parameters<ExportContextArrowInput>,
@@ -1156,14 +1165,18 @@ impl NopalMcpServer {
             return Ok(readonly_error());
         }
 
-        let shm_path = crate::ipc_export::export_to_mmap(&self.graph, &query).await
-            .map_err(|e| McpError::internal_error(format!("IPC Export Error: {}", e), None))?;
-
-        Ok(CallToolResult::structured(json!({
-            "status": "success",
-            "data_plane": "mmap_json_buffer",
-            "shm_path": shm_path,
-        })))
+        Ok(match crate::ipc_export::export_to_file(&self.graph, &query, &self.export).await {
+            Ok(out) => CallToolResult::structured(json!({
+                "status": "success",
+                "path": out.path.display().to_string(),
+                // Nombre anterior del campo; se conserva para clientes existentes.
+                "shm_path": out.path.display().to_string(),
+                "bytes": out.bytes,
+                "format": "json",
+                "ttl_seconds": crate::ipc_export::EXPORT_TTL.as_secs(),
+            })),
+            Err(e) => tool_error(format!("export failed: {e}")),
+        })
     }
 
     #[tool(description = "Indexación inicial (Cold Start) del proyecto. \
@@ -1691,7 +1704,7 @@ impl ServerHandler for NopalMcpServer {
                  'list_instances' enumerates all individuals of a class, \
                  'list_subclasses' maps the subclass hierarchy. \
                  Ontology tools require OWL data imported via import_turtle. \
-                 Dual-Plane tools: 'export_context_arrow' for massive zero-copy subgraph extraction, \
+                 Dual-Plane tools: 'export_context_arrow' writes large query results to a private JSON file and returns its path, \
                  'index_project_structure' for Cold Start project topology indexing, \
                  'record_episodic_event' for Semantic Commits with JIT entity sync (Defensive Architecture: amend tolerance), \
                  'validate_and_commit_pr_context' for CI/CD pipeline PR governance sealing."

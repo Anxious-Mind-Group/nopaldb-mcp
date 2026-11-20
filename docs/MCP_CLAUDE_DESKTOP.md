@@ -92,6 +92,8 @@ Con `--scope user` queda disponible en todos tus proyectos.
 | `--db <path>` | Ruta a la DB (default: `nopaldb.db` en CWD) |
 | `--readonly` | Abre la base sellada y solo acepta consultas: rechaza ADD/UPDATE/DELETE, índices y exportaciones a disco |
 | `--log-queries` | Loguea queries NQL a stderr (desactivado por default) |
+| `--export-dir <dir>` | Directorio de `export_context_arrow` (default `<db>.exports`) |
+| `--max-export-bytes <n>` | Tamaño máximo de un export (default 512 MiB) |
 
 ---
 

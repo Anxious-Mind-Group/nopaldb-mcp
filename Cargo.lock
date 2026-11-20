@@ -1320,12 +1320,11 @@ dependencies = [
 
 [[package]]
 name = "nopaldb-mcp"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "axum",
  "clap",
- "memmap2",
  "nopaldb",
  "rmcp",
  "serde",

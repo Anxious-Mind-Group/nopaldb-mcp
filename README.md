@@ -63,12 +63,18 @@ NOPALDB_MCP_TOKEN=secreto nopaldb-mcp --db graph.db --transport sse --host 0.0.0
 | `--auth-token` / `NOPALDB_MCP_TOKEN` | Bearer token para SSE |
 | `--cors-origin <origen>` | Orígenes CORS permitidos (repetible) |
 | `--log-queries` | Loguea NQL a stderr |
+| `--export-dir <dir>` | Directorio de `export_context_arrow` (default `<db>.exports`, junto a la base) |
+| `--max-export-bytes <n>` | Tamaño máximo de un export (default 512 MiB) |
+
+### Exports a archivo
+
+`export_context_arrow` escribe el resultado de la consulta como JSON (arreglo de filas) y devuelve `{path, bytes, format, ttl_seconds}` (`shm_path` se conserva como alias de `path`). Los archivos van a `--export-dir`, por defecto `<db>.exports` al lado del directorio de la base: el directorio se crea con permisos 0700 y cada archivo con 0600. Un export que pasa `--max-export-bytes` falla sin dejar archivo; el límite cubre el archivo, no la memoria que usa el motor para ejecutar la consulta. Los exports con más de una hora se borran al arrancar y en cada export nuevo; solo se tocan archivos `nopaldb_export_*.json`.
 
 ### Solo lectura
 
 Con `--readonly` el servidor rechaza toda sentencia que no sea una consulta (`find`, `explain find`, `profile find`), incluidas `create index`/`drop index` y las exportaciones que escriben a disco (`export ... with path=...`, `export parquet "..."`). La sentencia se clasifica con el parser de NopalDB, no por su primera palabra. Además, la base se abre con `Graph::open_read_only`: si una escritura pasara el filtro, el motor la rechaza.
 
-Dos matices del motor: abrir la base aplica migraciones pendientes y reproduce el WAL antes de sellarla, y toma el mismo lock exclusivo que una apertura normal, así que no convive con otro proceso que tenga la base abierta. `export_context_arrow` sigue escribiendo su archivo temporal en `/tmp`, que es su función.
+Dos matices del motor: abrir la base aplica migraciones pendientes y reproduce el WAL antes de sellarla, y toma el mismo lock exclusivo que una apertura normal, así que no convive con otro proceso que tenga la base abierta. `export_context_arrow` sigue escribiendo su archivo de export (ver abajo), que es su función.
 
 ## Compatibilidad
 
@@ -118,7 +124,7 @@ nopaldb migrate /ruta/base_sled /ruta/base_redb
 
 **Contexto de proyecto / exportación**
 
-- `export_context_arrow` — exporta un subgrafo masivo a memoria compartida (mmap)
+- `export_context_arrow` — escribe el resultado de una consulta a un archivo JSON privado y devuelve su ruta
 - `index_project_structure` — indexación inicial de la topología de un proyecto
 - `record_episodic_event` — registra commits semánticos con sincronización JIT de entidades
 - `rename_project_entity` — renombra la ruta física de una entidad preservando su historial

@@ -366,7 +366,7 @@ impl NopalMcpServer {
 #[tool_router(router = base_router)]
 impl NopalMcpServer {
     #[tool(description = "Execute an NQL graph query. Supports FIND, EXPLAIN, ADD, UPDATE, DELETE \
-        (write ops require --no-readonly flag). Returns rows as a JSON array. \
+        (write ops are rejected when the server runs with --readonly). Returns rows as a JSON array. \
         Example: 'find p.name, p.age from (p:Person) order by p.age desc limit 10'")]
     async fn graph_query(
         &self,
@@ -444,7 +444,7 @@ impl NopalMcpServer {
     #[tool(description = "Idempotently upsert a node keyed by (label, key): create if absent, \
         update if changed, no-op if identical. `props` is the full desired property map (a JSON \
         object including the key property). Optional `vector`+`model` attach an embedding; optional \
-        `links` reconcile outgoing edges. Requires --no-readonly. Returns {outcome, node_id} where \
+        `links` reconcile outgoing edges. Rejected when the server runs with --readonly. Returns {outcome, node_id} where \
         outcome is created|updated|unchanged.")]
     async fn upsert_node(
         &self,
@@ -490,7 +490,7 @@ impl NopalMcpServer {
 
     #[tool(description = "Delete the node identified by a business key (label, key, value) — the \
         counterpart of upsert_node for incremental reconciliation. Idempotent: deleting a missing \
-        key is a no-op. Requires --no-readonly. Returns {deleted, node_id}.")]
+        key is a no-op. Rejected when the server runs with --readonly. Returns {deleted, node_id}.")]
     async fn delete_node(
         &self,
         Parameters(DeleteNodeInput { label, key, value }): Parameters<DeleteNodeInput>,
@@ -1076,7 +1076,7 @@ impl NopalMcpServer {
         let transitive_q = format!(
             "find sub.label as subclass \
              from (sub) -[:subClassOf]->{{1,5}} (ancestor) \
-             where ancestor.label = \"{class}\" \
+             where ancestor.label = \"{safe_class}\" \
              order by subclass"
         );
 

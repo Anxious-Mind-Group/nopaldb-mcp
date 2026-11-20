@@ -57,18 +57,24 @@ NOPALDB_MCP_TOKEN=secreto nopaldb-mcp --db graph.db --transport sse --host 0.0.0
 | Flag | Descripción |
 |------|-------------|
 | `--db <path>` | Directorio de la base NopalDB |
-| `--readonly` | Deshabilita ADD/UPDATE/DELETE/CREATE/DROP |
+| `--readonly` | Abre la base sellada y rechaza escrituras (ver abajo) |
 | `--transport stdio\|sse` | Transporte (default `stdio`) |
 | `--host`, `--port` | Bind del transporte SSE (default `127.0.0.1:8080`) |
 | `--auth-token` / `NOPALDB_MCP_TOKEN` | Bearer token para SSE |
 | `--cors-origin <origen>` | Orígenes CORS permitidos (repetible) |
 | `--log-queries` | Loguea NQL a stderr |
 
+### Solo lectura
+
+Con `--readonly` el servidor rechaza toda sentencia que no sea una consulta (`find`, `explain find`, `profile find`), incluidas `create index`/`drop index` y las exportaciones que escriben a disco (`export ... with path=...`, `export parquet "..."`). La sentencia se clasifica con el parser de NopalDB, no por su primera palabra. Además, la base se abre con `Graph::open_read_only`: si una escritura pasara el filtro, el motor la rechaza.
+
+Dos matices del motor: abrir la base aplica migraciones pendientes y reproduce el WAL antes de sellarla, y toma el mismo lock exclusivo que una apertura normal, así que no convive con otro proceso que tenga la base abierta. `export_context_arrow` sigue escribiendo su archivo temporal en `/tmp`, que es su función.
+
 ## Compatibilidad
 
 | nopaldb-mcp | Motor `nopaldb` | Formato de la base |
 |---|---|---|
-| 0.6.x | 0.10.16 o posterior (0.10.x) | redb |
+| 0.6.x – 0.7.x | 0.10.16 o posterior (0.10.x) | redb |
 | 0.5.x | 0.5.x | sled |
 
 Desde 0.6.0 el servidor ya no abre bases sled: el motor retiró sled en 0.8.0. Una base sled se migra a redb con la CLI de `nopaldb` 0.7, una sola vez:

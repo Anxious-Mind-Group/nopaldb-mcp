@@ -1,6 +1,6 @@
 [package]
 name = "nopaldb-mcp"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 authors = ["Jose Antonio Mancilla (jtmancilla)", "Sharop <sharop@gmail.com>"]
 description = "MCP server for NopalDB — exposes graph queries, traversal, and algorithms as MCP tools"
@@ -13,7 +13,7 @@ name = "nopaldb-mcp"
 path = "src/main.rs"
 
 [dependencies]
-nopaldb   = { version = "0.10.16", features = ["algorithms", "embeddings-index", "reasoner", "fulltext", "hybrid"] }
+nopaldb   = { version = "0.11.0", features = ["algorithms", "embeddings-index", "reasoner", "fulltext", "hybrid"] }
 rmcp      = { version = "3.11", features = ["transport-io", "transport-streamable-http-server"] }
 axum      = "0.7"
 tower     = "0.5"
@@ -30,7 +30,7 @@ subtle    = "2"                                     # constant-time bearer-token
 
 [dev-dependencies]
 # Las tools de ontología se prueban sobre una base importada de Turtle.
-nopaldb = { version = "0.10.16", features = ["owl-import"] }
+nopaldb = { version = "0.11.0", features = ["owl-import"] }
 
 [features]
 default = []

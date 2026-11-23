@@ -77,7 +77,9 @@ pub fn nql_result_to_tool(result: NqlResult, max_rows: usize) -> CallToolResult 
                 "edges_deleted":  w.edges_deleted,
                 "nodes_updated":  w.nodes_updated,
                 "edges_updated":  w.edges_updated,
+                "nodes_unchanged": w.nodes_unchanged,
                 "created_ids":    w.created_ids,
+                "matched_ids":    w.matched_ids,
             }))
         }
         NqlResult::Index(msg)  => CallToolResult::success(vec![ContentBlock::text(msg)]),
@@ -115,7 +117,7 @@ pub fn readonly_error() -> CallToolResult {
 /// Clasifica con el parser del core y no por la primera palabra: la gramática
 /// acepta comentarios delante (`/* x */ add ...`) y eso burlaba el filtro.
 /// Es una lista blanca: solo pasan consultas, solas o bajo `explain` /
-/// `profile`; una variante nueva de `Statement` queda bloqueada hasta
+/// `profile`, y `explain upsert`; una variante nueva de `Statement` queda bloqueada hasta
 /// revisarla. Lo que no parsea pasa: la ejecución lo rechaza con el mismo
 /// error de sintaxis, sin tocar nada.
 pub fn is_write_statement(nql: &str) -> bool {
@@ -131,6 +133,8 @@ fn is_pure_read(stmt: &NQLStatement) -> bool {
             !matches!(e.format, ExportFormat::Parquet(_))
                 && !e.options.keys().any(|k| k.eq_ignore_ascii_case("path"))
         }),
+        // `explain upsert` (nopaldb 0.11) describe el plan sin ejecutarlo.
+        NQLStatement::Explain(inner) if matches!(**inner, NQLStatement::Upsert(_)) => true,
         NQLStatement::Explain(inner) | NQLStatement::Profile(inner) => is_pure_read(inner),
         _ => false,
     }
@@ -185,6 +189,9 @@ mod tests {
             "find p.name from (p:Persona) export csv with path=\"x.csv\"",
             "find p.name from (p:Persona) export csv with PATH=\"x.csv\"",
             "find p.name from (p:Persona) export parquet \"x.parquet\"",
+            "create unique index on Persona(name)",
+            "upsert (p:Persona {name: \"eva\"}) set p.n = 1",
+            "upsert (a:Persona {name: \"ana\"})-[:CONOCE]->(b:Persona {name: \"eva\"})",
         ] {
             assert!(is_write_statement(nql), "debió bloquearse: {nql:?}");
         }
@@ -193,6 +200,7 @@ mod tests {
             "/* nota */ FIND p.name from (p:Persona)",
             "explain find p.name from (p:Persona)",
             "profile find p.name from (p:Persona)",
+            "explain upsert (p:Persona {name: \"eva\"})",
             "find p.name from (p:Persona) export csv",
             "find p.name from (p:Persona) export json with pretty=true",
             // No parsean (`explain` solo admite consultas): la ejecución

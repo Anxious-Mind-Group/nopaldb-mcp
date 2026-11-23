@@ -411,6 +411,9 @@ async fn readonly_rejects_every_write_tool() {
         "  UPDATE (p:Persona) set p.name = \"eva\" where p.name = \"ana\"".to_string(),
         "create index on Persona(name) type hash".to_string(),
         "drop index persona_name".to_string(),
+        "create unique index on Persona(name)".to_string(),
+        "upsert (p:Persona {name: \"eva\"})".to_string(),
+        "/* x */ upsert (p:Persona {name: \"ana\"})-[:CONOCE]->(q:Persona {name: \"eva\"})".to_string(),
         format!("find p.name from (p:Persona) export json with path=\"{out}\""),
         format!("/* x */ find p.name from (p:Persona) export csv with path=\"{out}\""),
     ];
@@ -422,6 +425,10 @@ async fn readonly_rejects_every_write_tool() {
         }
     }
     assert!(!Path::new(out).exists(), "una exportación escribió {out}");
+
+    // `explain upsert` solo describe el plan: pasa con la base sellada.
+    let ex = srv.call("graph_query", json!({ "query": "explain upsert (p:Persona {name: \"eva\"})" }));
+    assert_ne!(ex["isError"], json!(true), "{ex}");
 
     // Nada cambió, y leer sigue funcionando con la base sellada.
     let q = srv.call("graph_query", json!({ "query": "find count(*) as n from (p:Persona)" }));
@@ -466,6 +473,15 @@ async fn every_syntax_example_runs_through_graph_query() {
     for nql in examples {
         srv.call("graph_query", json!({ "query": nql }));
     }
+
+    // Repetido, el upsert del ejemplo encuentra el nodo y no cambia nada.
+    let up = srv.call(
+        "graph_query",
+        json!({ "query": "upsert (p:Person { email: \"alice@example.org\", name: \"Alice\" }) set p.visits = 1" }),
+    );
+    let w = &up["structuredContent"];
+    assert_eq!((w["nodes_created"].as_u64(), w["nodes_unchanged"].as_u64()), (Some(0), Some(1)), "{up}");
+    assert_eq!(w["matched_ids"].as_array().map(Vec::len), Some(1), "{up}");
 
     drop(srv);
     let _ = std::fs::remove_dir_all(&db);

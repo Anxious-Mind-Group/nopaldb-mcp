@@ -1288,9 +1288,9 @@ dependencies = [
 
 [[package]]
 name = "nopaldb"
-version = "0.10.16"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de2efbaca991e62965fa26f1b6847dd91116a640070a68b38fbfab4b93d646d4"
+checksum = "686e4f1fd5a399b24ce2acd1e979dd8c36505163901d42a7dbe5bdd1a89ecdbd"
 dependencies = [
  "anndists",
  "anyhow",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "nopaldb-mcp"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "axum",

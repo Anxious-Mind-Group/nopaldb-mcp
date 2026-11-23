@@ -185,7 +185,7 @@ pub struct ListSubclassesInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct NqlSyntaxInput {
-    /// Statement type to get syntax for: find, add, update, delete, explain, profile, create_index, drop_index.
+    /// Statement type to get syntax for: find, add, update, delete, explain, profile, create_index, drop_index, upsert.
     /// Leave empty to get full synopsis.
     pub statement: Option<String>,
 }
@@ -372,8 +372,13 @@ impl NopalMcpServer {
 
 #[tool_router(router = base_router)]
 impl NopalMcpServer {
-    #[tool(description = "Execute an NQL graph query. Supports FIND, EXPLAIN, ADD, UPDATE, DELETE \
-        (write ops are rejected when the server runs with --readonly). Returns rows as a JSON array. \
+    #[tool(description = "Execute an NQL graph query. Supports FIND, EXPLAIN, ADD, UPDATE, DELETE, \
+        UPSERT and CREATE [UNIQUE] INDEX (write ops are rejected when the server runs with --readonly). \
+        Returns rows as a JSON array. \
+        UPSERT finds or creates each node by a property under a unique index, then each edge by \
+        (source, type, target), so it can connect existing nodes without duplicating them: \
+        'create unique index on Person(email)', then \
+        'upsert (a:Person {email: \"a@example.org\"})-[:KNOWS]->(b:Person {email: \"b@example.org\"}) set a.visits = a.visits + 1'. \
         Example: 'find p.name, p.age from (p:Person) order by p.age desc limit 10'")]
     async fn graph_query(
         &self,
@@ -625,7 +630,7 @@ impl NopalMcpServer {
 
     #[tool(description = "Return NQL (Nopal Query Language) syntax reference. \
         Call this BEFORE writing any NQL query to learn the correct syntax. \
-        Optionally filter by statement type: find, add, update, delete, explain, profile, create_index, drop_index. \
+        Optionally filter by statement type: find, add, update, delete, explain, profile, create_index, drop_index, upsert. \
         Without a filter, returns a complete synopsis of all statement types with examples.")]
     async fn nql_syntax(
         &self,
@@ -675,6 +680,13 @@ impl NopalMcpServer {
             ("drop_index", "drop_index_stmt", vec![
                 "drop index Person_name",
             ]),
+            // Identidad por índice único: el `create unique index` va primero.
+            ("upsert", "upsert_stmt", vec![
+                "create unique index on Person(email)",
+                "upsert (p:Person { email: \"alice@example.org\", name: \"Alice\" }) set p.visits = 1",
+                "upsert (a:Person { email: \"alice@example.org\" })-[r:KNOWS { since: 2020 }]->(b:Person { email: \"bob@example.org\" }) set r.seen = true",
+                "explain upsert (p:Person { email: \"alice@example.org\" })",
+            ]),
         ];
 
         let filter = statement.as_deref().map(|s| s.to_lowercase());
@@ -688,6 +700,7 @@ impl NopalMcpServer {
         output.push_str("  - Consultar: `find ... from (pattern)`\n");
         output.push_str("  - Modificar: `update (pattern) set prop = value where ...`\n");
         output.push_str("  - Eliminar: `delete (pattern) [where ...]`\n");
+        output.push_str("  - Crear o actualizar por clave: `upsert (pattern) [set ...]`; cada nodo necesita una propiedad con índice único (`create unique index on Label(prop)`), y una arista que falta entre nodos existentes los conecta sin duplicarlos\n");
         output.push_str("  - Valores string: comillas dobles `\"texto\"` o simples `'texto'`\n");
         output.push_str("  - Nodos: `(variable:Label { prop: value })`\n");
         output.push_str("  - Aristas: `-[:TYPE]->`, `<-[:TYPE]-`, `-[r:TYPE]->`; ambas direcciones: `<-[:TYPE]->`\n");
@@ -733,7 +746,7 @@ impl NopalMcpServer {
             && !sections.iter().any(|(name, _, _)| *name == f.as_str()) {
                 output.push_str(&format!(
                     "Statement type '{}' no reconocido. Tipos válidos: find, add, update, delete, \
-                     explain, profile, create_index, drop_index\n", f
+                     explain, profile, create_index, drop_index, upsert\n", f
                 ));
             }
 

@@ -82,6 +82,7 @@ Dos matices del motor: abrir la base aplica migraciones pendientes y reproduce e
 
 | nopaldb-mcp | Motor `nopaldb` | Formato de la base |
 |---|---|---|
+| 0.9.x | 0.11.0 o posterior (0.11.x) | redb |
 | 0.6.x – 0.8.x | 0.10.16 o posterior (0.10.x) | redb |
 | 0.5.x | 0.5.x | sled |
 
@@ -96,7 +97,7 @@ nopaldb migrate /ruta/base_sled /ruta/base_redb
 
 **Consulta y esquema**
 
-- `graph_query` — ejecuta NQL (FIND, EXPLAIN; ADD/UPDATE/DELETE si el servidor no corre con `--readonly`)
+- `graph_query` — ejecuta NQL (FIND, EXPLAIN; ADD/UPDATE/DELETE/UPSERT y `create [unique] index` si el servidor no corre con `--readonly`). `upsert` encuentra o crea cada nodo por una propiedad con índice único y cada arista por (origen, tipo, destino), así que conecta nodos existentes sin duplicarlos; `explain upsert` pasa también en solo lectura. El resultado de una escritura trae `nodes_unchanged` y `matched_ids`
 - `nql_syntax` — referencia de sintaxis NQL, filtrable por tipo de sentencia
 - `schema_info` — labels, tipos de arista, conteos de nodos y aristas
 - `schema_by_kind` — esquema agrupado por label con conteos por frecuencia

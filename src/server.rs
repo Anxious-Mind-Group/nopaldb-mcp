@@ -651,6 +651,7 @@ impl NopalMcpServer {
                 "find distinct n.label as label from (n) order by label",
                 "find distinct b.name from (a:Person)-[:KNOWS]->{1,2}(b:Person)",
                 "find distinct b.name from (a:Person)<->{1,3}(b)",
+                "find b.name, r.type from (a:Person)-[r:KNOWS|LIKES]->(b)",
             ]),
             ("add", "add_stmt", vec![
                 "add (n:Person { name: \"Alice\", age: 30 })",
@@ -706,6 +707,7 @@ impl NopalMcpServer {
         output.push_str("  - Valores string: comillas dobles `\"texto\"` o simples `'texto'`\n");
         output.push_str("  - Nodos: `(variable:Label { prop: value })`\n");
         output.push_str("  - Aristas: `-[:TYPE]->`, `<-[:TYPE]-`, `-[r:TYPE]->`; ambas direcciones: `<-[:TYPE]->`\n");
+        output.push_str("  - Unión de tipos: `-[:A|B]->` sigue una arista de cualquiera de los tipos (también con `{1,3}`); solo en lecturas, `add` y `upsert` la rechazan\n");
         output.push_str("  - Longitud variable: `-[:TYPE]->{1,3}` o `->{1,3}` (el `*1..3` de Cypher NO es NQL; el límite superior es obligatorio)\n");
         output.push_str("  - Tipo de una arista: `r.type` (no `r.label`)\n\n");
 

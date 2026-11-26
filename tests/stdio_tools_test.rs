@@ -158,8 +158,9 @@ fn names(rows: &Value, key: &str) -> Vec<String> {
     v
 }
 
-const ALL_TOOLS: [&str; 21] = [
+const ALL_TOOLS: [&str; 22] = [
     "classify_node",
+    "cypher_query",
     "delete_node",
     "export_context_arrow",
     "find_path",
@@ -190,6 +191,20 @@ fn check_read_tools(srv: &mut Server) {
     assert_eq!(names(&q["structuredContent"]["rows"], "p.name"), ["ana", "beto", "carla"]);
     let ex = srv.call("graph_query", json!({ "query": "explain find p.name from (p:Persona)" }));
     assert!(!text_of(&ex).is_empty(), "explain: {ex}");
+    // Cypher de solo lectura: se traduce a NQL y trae el NQL que corrió.
+    let cy = srv.call(
+        "cypher_query",
+        json!({ "query": "MATCH (a:Persona)-[:CONOCE]->(b) RETURN b.name ORDER BY b.name" }),
+    );
+    assert_eq!(names(&cy["structuredContent"]["rows"], "b.name"), ["beto", "carla"]);
+    assert_eq!(
+        cy["structuredContent"]["nql"],
+        json!("find b.name from (a:Persona)-[:CONOCE]->(b) order by b.name"),
+        "{cy}"
+    );
+    let w = srv.call_raw("cypher_query", json!({ "query": "CREATE (p:Persona {name: 'eva'})" }));
+    assert_eq!(w["isError"], json!(true), "{w}");
+    assert!(text_of(&w).contains("read-only"), "{w}");
     let syn = srv.call("nql_syntax", json!({ "statement": "find" }));
     assert!(!text_of(&syn).is_empty() || !syn["structuredContent"].is_null(), "nql_syntax: {syn}");
     let si = srv.call("schema_info", json!({}));

@@ -65,6 +65,14 @@ pub struct GraphQueryInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CypherQueryInput {
+    /// Read-only Cypher query (MATCH ... WHERE ... RETURN ... ORDER BY ... SKIP ... LIMIT)
+    pub query: String,
+    /// Maximum rows to return (default 100, max 1000)
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct UpsertNodeInput {
     /// Node label.
     pub label: String,
@@ -370,29 +378,11 @@ impl NopalMcpServer {
     }
 }
 
-#[tool_router(router = base_router)]
 impl NopalMcpServer {
-    #[tool(description = "Execute an NQL graph query. Supports FIND, EXPLAIN, ADD, UPDATE, DELETE, \
-        UPSERT and CREATE [UNIQUE] INDEX (write ops are rejected when the server runs with --readonly). \
-        Returns rows as a JSON array. \
-        UPSERT finds or creates each node by a property under a unique index, then each edge by \
-        (source, type, target), so it can connect existing nodes without duplicating them: \
-        'create unique index on Person(email)', then \
-        'upsert (a:Person {email: \"a@example.org\"})-[:KNOWS]->(b:Person {email: \"b@example.org\"}) set a.visits = a.visits + 1'. \
-        Example: 'find p.name, p.age from (p:Person) order by p.age desc limit 10'")]
-    async fn graph_query(
-        &self,
-        Parameters(GraphQueryInput { query, limit }): Parameters<GraphQueryInput>,
-    ) -> Result<CallToolResult, McpError> {
-        if self.readonly && is_write_statement(&query) {
-            return Ok(readonly_error());
-        }
-        if self.log_queries {
-            tracing::info!(query = %query, "graph_query");
-        }
-        let limit = limit.unwrap_or(DEFAULT_ROWS).min(MAX_ROWS as u32) as usize;
-        let result = self.graph.execute_statement(&query).await;
-        Ok(match result {
+    /// Ejecuta un statement NQL y lo convierte en resultado de tool. Lo
+    /// comparten `graph_query` y `cypher_query` (que traduce a NQL antes).
+    async fn run_nql(&self, query: &str, limit: usize) -> CallToolResult {
+        match self.graph.execute_statement(query).await {
             Ok(nopaldb::NqlResult::Query(mut qr)) => {
                 // ── Enriquecimiento Semántico: inyectar labels faltantes ──
                 // Detectar prefijos de variables (ej. "a" de "a.id") y si
@@ -450,7 +440,66 @@ impl NopalMcpServer {
             }
             Ok(r) => nql_result_to_tool(r, limit),
             Err(e) => tool_error(e),
-        })
+        }
+    }
+}
+
+#[tool_router(router = base_router)]
+impl NopalMcpServer {
+    #[tool(description = "Execute an NQL graph query. Supports FIND, EXPLAIN, ADD, UPDATE, DELETE, \
+        UPSERT and CREATE [UNIQUE] INDEX (write ops are rejected when the server runs with --readonly). \
+        Returns rows as a JSON array. \
+        UPSERT finds or creates each node by a property under a unique index, then each edge by \
+        (source, type, target), so it can connect existing nodes without duplicating them: \
+        'create unique index on Person(email)', then \
+        'upsert (a:Person {email: \"a@example.org\"})-[:KNOWS]->(b:Person {email: \"b@example.org\"}) set a.visits = a.visits + 1'. \
+        Example: 'find p.name, p.age from (p:Person) order by p.age desc limit 10'")]
+    async fn graph_query(
+        &self,
+        Parameters(GraphQueryInput { query, limit }): Parameters<GraphQueryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if self.readonly && is_write_statement(&query) {
+            return Ok(readonly_error());
+        }
+        if self.log_queries {
+            tracing::info!(query = %query, "graph_query");
+        }
+        let limit = limit.unwrap_or(DEFAULT_ROWS).min(MAX_ROWS as u32) as usize;
+        Ok(self.run_nql(&query, limit).await)
+    }
+
+    #[tool(description = "Execute a read-only Cypher query: MATCH ... WHERE ... RETURN [DISTINCT] ... \
+        ORDER BY ... SKIP ... LIMIT. It is translated to NQL and runs like graph_query; the result \
+        carries the NQL it ran in `nql`. Supported: one label per node, literal property maps, \
+        relationship types and unions (:A|B), the three directions, bounded variable length (*1..3), \
+        IS [NOT] NULL, IN with a literal list, arithmetic, count/sum/avg/min/max, id(), type(). \
+        Rejected with an error naming the part: writes (use graph_query with add/upsert/update/delete), \
+        OPTIONAL MATCH, WITH, UNWIND, UNION, CALL, $parameters, functions NQL lacks. \
+        Differences: a comparison with a missing property is false (two-valued logic), \
+        RETURN n gives the node's columns, sum of integers is a float. \
+        Example: 'MATCH (p:Person)-[:KNOWS]->(q) WHERE p.age > 30 RETURN q.name ORDER BY q.name LIMIT 5'")]
+    async fn cypher_query(
+        &self,
+        Parameters(CypherQueryInput { query, limit }): Parameters<CypherQueryInput>,
+    ) -> Result<CallToolResult, McpError> {
+        if self.log_queries {
+            tracing::info!(query = %query, "cypher_query");
+        }
+        let nql = match nopaldb::query::cypher::to_nql(&query) {
+            Ok(nql) => nql,
+            Err(e) => return Ok(tool_error(e)),
+        };
+        // La traducción solo produce `find`; el chequeo protege `--readonly`
+        // aunque eso cambie.
+        if self.readonly && is_write_statement(&nql) {
+            return Ok(readonly_error());
+        }
+        let limit = limit.unwrap_or(DEFAULT_ROWS).min(MAX_ROWS as u32) as usize;
+        let mut result = self.run_nql(&nql, limit).await;
+        if let Some(serde_json::Value::Object(obj)) = result.structured_content.as_mut() {
+            obj.insert("nql".to_string(), json!(nql));
+        }
+        Ok(result)
     }
 
     #[tool(description = "Idempotently upsert a node keyed by (label, key): create if absent, \
@@ -1710,7 +1759,8 @@ impl ServerHandler for NopalMcpServer {
             let mut instructions = String::from(
                 "NopalDB MCP Server: query a graph database using NQL. \
                  IMPORTANT: call 'nql_syntax' FIRST to learn correct NQL syntax before writing queries. \
-                 NQL is NOT Cypher — it uses 'add' (not 'create'), 'find' (not 'match'). \
+                 NQL is NOT Cypher — it uses 'add' (not 'create'), 'find' (not 'match'); \
+                 for a read-only Cypher query (MATCH ... RETURN ...) use 'cypher_query', which translates it to NQL. \
                  Start with 'schema_info' or 'schema_by_kind' to discover labels and edge types. \
                  Use 'graph_query' for arbitrary NQL, 'get_node'/'get_neighbors' for \
                  targeted lookup, 'find_path' for shortest paths, \

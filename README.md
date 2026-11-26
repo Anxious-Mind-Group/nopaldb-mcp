@@ -98,6 +98,7 @@ nopaldb migrate /ruta/base_sled /ruta/base_redb
 **Consulta y esquema**
 
 - `graph_query` — ejecuta NQL (FIND, EXPLAIN; ADD/UPDATE/DELETE/UPSERT y `create [unique] index` si el servidor no corre con `--readonly`). `upsert` encuentra o crea cada nodo por una propiedad con índice único y cada arista por (origen, tipo, destino), así que conecta nodos existentes sin duplicarlos; `explain upsert` pasa también en solo lectura. El resultado de una escritura trae `nodes_unchanged` y `matched_ids`
+- `cypher_query` — Cypher de solo lectura (`MATCH … WHERE … RETURN … ORDER BY … SKIP … LIMIT`), traducido a NQL y ejecutado como `graph_query`; el resultado trae en `nql` la consulta NQL que corrió. Las escrituras, `OPTIONAL MATCH`, `WITH`, los parámetros y las funciones sin equivalente en NQL son un error que nombra la parte; las diferencias con Cypher están en [CYPHER.md](https://github.com/sharop/nopaldb/blob/main/docs/es/CYPHER.md) de nopaldb
 - `nql_syntax` — referencia de sintaxis NQL, filtrable por tipo de sentencia
 - `schema_info` — labels, tipos de arista, conteos de nodos y aristas
 - `schema_by_kind` — esquema agrupado por label con conteos por frecuencia
